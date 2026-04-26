@@ -13,4 +13,5 @@ dependencies = [
     "python-multipart>=0.0.20",
     "sqlalchemy>=2.0.48",
     "uvicorn>=0.42.0",
+    "pydantic-settings>=2.14.0",
 ]
