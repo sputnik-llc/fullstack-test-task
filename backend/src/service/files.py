@@ -3,7 +3,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import HTTPException, UploadFile
-from sqlalchemy import select
+from sqlalchemy import select, func
 from starlette import status
 
 from src.core.storage import STORAGE_DIR
@@ -11,11 +11,21 @@ from src.db.session import async_session_maker
 from src.models.files import StoredFile
 
 
-async def list_files() -> list[StoredFile]:
+async def list_files(limit: int, offset: int) -> tuple[list[StoredFile], int]:
     async with async_session_maker() as session:
+        total_result = await session.execute(
+            select(func.count()).select_from(StoredFile)
+        )
+        total = total_result.scalar_one()
+
         result = await session.execute(
-            select(StoredFile).order_by(StoredFile.created_at.desc()))
-        return list(result.scalars().all())
+            select(StoredFile)
+            .order_by(StoredFile.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+
+        return list(result.scalars().all()), total
 
 
 async def get_file(file_id: str) -> StoredFile:

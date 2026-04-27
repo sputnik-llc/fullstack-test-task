@@ -22,3 +22,10 @@ class FileItem(BaseModel):
 
 class FileUpdate(BaseModel):
     title: str
+
+
+class FilesPage(BaseModel):
+    items: list[FileItem]
+    total: int
+    limit: int
+    offset: int

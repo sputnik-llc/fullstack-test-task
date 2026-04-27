@@ -11,7 +11,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    DEBUG: bool = True
+    DEBUG: bool = False
 
     POSTGRES_USER: str
     POSTGRES_PASSWORD: str

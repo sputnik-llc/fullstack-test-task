@@ -15,6 +15,13 @@ import {
   Table,
 } from "react-bootstrap";
 
+type PaginatedResponse<T> = {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
 type FileItem = {
   id: string;
   title: string;
@@ -38,6 +45,7 @@ type AlertItem = {
   created_at: string;
 };
 
+const PAGE_LIMIT = 20;
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("ru-RU", {
@@ -89,6 +97,10 @@ function getProcessingVariant(status: string) {
 export default function Page() {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
+  const [filesTotal, setFilesTotal] = useState(0);
+  const [alertsTotal, setAlertsTotal] = useState(0);
+  const [filesOffset, setFilesOffset] = useState(0);
+  const [alertsOffset, setAlertsOffset] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showModal, setShowModal] = useState(false);
@@ -96,27 +108,30 @@ export default function Page() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  async function loadData() {
+  async function loadData(nextFilesOffset = filesOffset, nextAlertsOffset = alertsOffset) {
     setIsLoading(true);
     setErrorMessage(null);
 
     try {
       const [filesResponse, alertsResponse] = await Promise.all([
-        fetch(`http://localhost:8000/files`, { cache: "no-store" }),
-        fetch(`http://localhost:8000/alerts`, { cache: "no-store" }),
+        fetch(`http://localhost:8000/files?limit=${PAGE_LIMIT}&offset=${nextFilesOffset}`, { cache: "no-store" }),
+        fetch(`http://localhost:8000/alerts?limit=${PAGE_LIMIT}&offset=${nextAlertsOffset}`, { cache: "no-store" }),
       ]);
 
       if (!filesResponse.ok || !alertsResponse.ok) {
         throw new Error("Не удалось загрузить данные");
       }
 
-      const [filesData, alertsData] = await Promise.all([
-        filesResponse.json() as Promise<FileItem[]>,
-        alertsResponse.json() as Promise<AlertItem[]>,
-      ]);
+      const filesData = await filesResponse.json() as PaginatedResponse<FileItem>;
+      const alertsData = await alertsResponse.json() as PaginatedResponse<AlertItem>;
 
-      setFiles(filesData);
-      setAlerts(alertsData);
+      setFiles(filesData.items);
+      setAlerts(alertsData.items);
+
+      setFilesTotal(filesData.total);
+      setAlertsTotal(alertsData.total);
+      setFilesOffset(filesData.offset);
+      setAlertsOffset(alertsData.offset);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Произошла ошибка");
     } finally {
@@ -156,7 +171,7 @@ export default function Page() {
       setShowModal(false);
       setTitle("");
       setSelectedFile(null);
-      await loadData();
+      await loadData(0, 0);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Произошла ошибка");
     } finally {
@@ -199,7 +214,7 @@ export default function Page() {
             <Card.Header className="bg-white border-0 pt-4 px-4">
               <div className="d-flex justify-content-between align-items-center">
                 <h2 className="h5 mb-0">Файлы</h2>
-                <Badge bg="secondary">{files.length}</Badge>
+                <Badge bg="secondary">{files.length} / {filesTotal}</Badge>
               </div>
             </Card.Header>
             <Card.Body className="px-4 pb-4">
@@ -270,6 +285,24 @@ export default function Page() {
                       )}
                     </tbody>
                   </Table>
+                  <div className="d-flex justify-content-end gap-2 mt-3">
+                    <Button
+                      variant="outline-secondary"
+                      size="sm"
+                      disabled={filesOffset === 0}
+                      onClick={() => void loadData(Math.max(filesOffset - PAGE_LIMIT, 0), alertsOffset)}
+                    >
+                      Prev
+                    </Button>
+                    <Button
+                      variant="outline-secondary"
+                      size="sm"
+                      disabled={filesOffset + PAGE_LIMIT >= filesTotal}
+                      onClick={() => void loadData(filesOffset + PAGE_LIMIT, alertsOffset)}
+                    >
+                      Next
+                    </Button>
+                  </div>
                 </div>
               )}
             </Card.Body>
@@ -279,7 +312,7 @@ export default function Page() {
             <Card.Header className="bg-white border-0 pt-4 px-4">
               <div className="d-flex justify-content-between align-items-center">
                 <h2 className="h5 mb-0">Алерты</h2>
-                <Badge bg="secondary">{alerts.length}</Badge>
+                <Badge bg="secondary">{alerts.length} / {alertsTotal}</Badge>
               </div>
             </Card.Header>
             <Card.Body className="px-4 pb-4">
@@ -321,6 +354,24 @@ export default function Page() {
                       )}
                     </tbody>
                   </Table>
+                  <div className="d-flex justify-content-end gap-2 mt-3">
+                    <Button
+                      variant="outline-secondary"
+                      size="sm"
+                      disabled={alertsOffset === 0}
+                      onClick={() => void loadData(filesOffset, Math.max(alertsOffset - PAGE_LIMIT, 0))}
+                    >
+                      Prev
+                    </Button>
+                    <Button
+                      variant="outline-secondary"
+                      size="sm"
+                      disabled={alertsOffset + PAGE_LIMIT >= alertsTotal}
+                      onClick={() => void loadData(filesOffset, alertsOffset + PAGE_LIMIT)}
+                    >
+                      Next
+                    </Button>
+                  </div>
                 </div>
               )}
             </Card.Body>

@@ -1,20 +1,29 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Query
 from fastapi import File, Form, UploadFile
-from starlette import status
 from starlette.responses import FileResponse
 
-from src.core.storage import STORAGE_DIR
-from src.schemas.files import FileItem, FileUpdate
-from src.service.files import list_files, create_file, get_file, update_file, delete_file
-from src.tasks.file_tasks import scan_file_for_threats
+from src.schemas.files import FileItem, FileUpdate, FilesPage
 from src.service.files import get_file_path
+from src.service.files import list_files, create_file, get_file, update_file, \
+    delete_file
+from src.tasks.file_tasks import scan_file_for_threats
 
 router = APIRouter(prefix="/files", tags=["files"])
 
 
-@router.get("", response_model=list[FileItem])
-async def list_files_view():
-    return await list_files()
+@router.get("", response_model=FilesPage)
+async def list_files_view(
+        limit: int = Query(20, ge=1, le=100),
+        offset: int = Query(0, ge=0),
+):
+    files, total = await list_files(limit=limit, offset=offset)
+
+    return FilesPage(
+        items=[FileItem.model_validate(file) for file in files],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.post("", response_model=FileItem, status_code=201)
@@ -42,9 +51,7 @@ async def update_file_view(
 @router.get("/{file_id}/download")
 async def download_file(file_id: str):
     file_item, stored_path = await get_file_path(file_id)
-    if not stored_path.exists():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                            detail="Stored file not found")
+
     return FileResponse(
         path=stored_path,
         media_type=file_item.mime_type,

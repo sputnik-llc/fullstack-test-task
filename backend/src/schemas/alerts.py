@@ -11,3 +11,10 @@ class AlertItem(BaseModel):
     level: str
     message: str
     created_at: datetime
+
+
+class AlertsPage(BaseModel):
+    items: list[AlertItem]
+    total: int
+    limit: int
+    offset: int
