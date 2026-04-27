@@ -8,6 +8,33 @@ from src.models.alerts import Alert
 from src.models.files import StoredFile
 
 
+async def _mark_file_processing_failed(file_id: str, details: str) -> None:
+    async with async_session_maker() as session:
+        file_item = await session.get(StoredFile, file_id)
+        if not file_item:
+            return
+
+        scan_details = details[:500]
+        file_item.processing_status = "failed"
+        file_item.scan_status = "failed"
+        file_item.scan_details = scan_details
+        file_item.requires_attention = True
+        session.add(Alert(
+            file_id=file_id,
+            level="critical",
+            message=f"File processing failed: {scan_details}"[:500],
+        ))
+        await session.commit()
+
+
+def _run_file_task(file_id: str, coroutine) -> None:
+    try:
+        run_async(coroutine)
+    except Exception as exc:
+        run_async(_mark_file_processing_failed(file_id, str(exc)))
+        raise
+
+
 async def _scan_file_for_threats(file_id: str) -> None:
     async with async_session_maker() as session:
         file_item = await session.get(StoredFile, file_id)
@@ -97,14 +124,14 @@ async def _send_file_alert(file_id: str) -> None:
 
 @celery_app.task
 def scan_file_for_threats(file_id: str) -> None:
-    run_async(_scan_file_for_threats(file_id))
+    _run_file_task(file_id, _scan_file_for_threats(file_id))
 
 
 @celery_app.task
 def extract_file_metadata(file_id: str) -> None:
-    run_async(_extract_file_metadata(file_id))
+    _run_file_task(file_id, _extract_file_metadata(file_id))
 
 
 @celery_app.task
 def send_file_alert(file_id: str) -> None:
-    run_async(_send_file_alert(file_id))
+    _run_file_task(file_id, _send_file_alert(file_id))

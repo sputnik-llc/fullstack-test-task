@@ -1,6 +1,6 @@
 import type { AlertItem, FileItem, PaginatedResponse } from "./types";
 
-const API_BASE_URL = "http://localhost:8000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export async function fetchFiles(limit: number, offset: number) {
   const response = await fetch(`${API_BASE_URL}/files?limit=${limit}&offset=${offset}`, {

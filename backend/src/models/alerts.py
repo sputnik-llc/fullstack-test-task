@@ -10,8 +10,12 @@ class Alert(Base):
     __tablename__ = "alerts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    file_id: Mapped[str] = mapped_column(String(36), ForeignKey("files.id"),
-                                         nullable=False)
+    file_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("files.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
     level: Mapped[str] = mapped_column(String(50), nullable=False)
     message: Mapped[str] = mapped_column(String(500), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
