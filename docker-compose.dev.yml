@@ -13,13 +13,14 @@ services:
 
   backend-worker:
     build: ./backend
-    command: [ 'celery', '-A', 'src.tasks.celery_app', 'worker', '-l', 'info' ]
+    command: ['celery', '-A', 'src.core.celery_app.celery_app', 'worker', '-l', 'info']
     container_name: backend-worker
     env_file: ".env.dev"
     volumes:
       - ./backend:/backend
     depends_on:
       - backend-db
+      - backend-redis
 
   backend-db:
     image: postgres:latest

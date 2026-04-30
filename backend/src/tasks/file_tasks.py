@@ -1,26 +1,38 @@
-import asyncio
-import os
 from pathlib import Path
-from celery import Celery
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-from src.models import Alert, StoredFile
-from src.service import STORAGE_DIR, DB_URL
 
-REDIS_URL = os.environ.get("REDIS_URL", "redis://backend-redis:6379/0")
-_worker_loop: asyncio.AbstractEventLoop | None = None
-
-
-def run_in_worker_loop(coroutine):
-    global _worker_loop
-    if _worker_loop is None or _worker_loop.is_closed():
-        _worker_loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(_worker_loop)
-    return _worker_loop.run_until_complete(coroutine)
+from src.core.async_utils import run_async
+from src.core.celery_app import celery_app
+from src.core.storage import STORAGE_DIR
+from src.db.session import async_session_maker
+from src.models.alerts import Alert
+from src.models.files import StoredFile
 
 
-celery_app = Celery("file_tasks", broker=REDIS_URL, backend=REDIS_URL)
-engine = create_async_engine(DB_URL)
-async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
+async def _mark_file_processing_failed(file_id: str, details: str) -> None:
+    async with async_session_maker() as session:
+        file_item = await session.get(StoredFile, file_id)
+        if not file_item:
+            return
+
+        scan_details = details[:500]
+        file_item.processing_status = "failed"
+        file_item.scan_status = "failed"
+        file_item.scan_details = scan_details
+        file_item.requires_attention = True
+        session.add(Alert(
+            file_id=file_id,
+            level="critical",
+            message=f"File processing failed: {scan_details}"[:500],
+        ))
+        await session.commit()
+
+
+def _run_file_task(file_id: str, coroutine) -> None:
+    try:
+        run_async(coroutine)
+    except Exception as exc:
+        run_async(_mark_file_processing_failed(file_id, str(exc)))
+        raise
 
 
 async def _scan_file_for_threats(file_id: str) -> None:
@@ -39,7 +51,8 @@ async def _scan_file_for_threats(file_id: str) -> None:
         if file_item.size > 10 * 1024 * 1024:
             reasons.append("file is larger than 10 MB")
 
-        if extension == ".pdf" and file_item.mime_type not in {"application/pdf", "application/octet-stream"}:
+        if extension == ".pdf" and file_item.mime_type not in {"application/pdf",
+                                                               "application/octet-stream"}:
             reasons.append("pdf extension does not match mime type")
 
         file_item.scan_status = "suspicious" if reasons else "clean"
@@ -93,7 +106,8 @@ async def _send_file_alert(file_id: str) -> None:
             return
 
         if file_item.processing_status == "failed":
-            alert = Alert(file_id=file_id, level="critical", message="File processing failed")
+            alert = Alert(file_id=file_id, level="critical",
+                          message="File processing failed")
         elif file_item.requires_attention:
             alert = Alert(
                 file_id=file_id,
@@ -101,7 +115,8 @@ async def _send_file_alert(file_id: str) -> None:
                 message=f"File requires attention: {file_item.scan_details}",
             )
         else:
-            alert = Alert(file_id=file_id, level="info", message="File processed successfully")
+            alert = Alert(file_id=file_id, level="info",
+                          message="File processed successfully")
 
         session.add(alert)
         await session.commit()
@@ -109,14 +124,14 @@ async def _send_file_alert(file_id: str) -> None:
 
 @celery_app.task
 def scan_file_for_threats(file_id: str) -> None:
-    run_in_worker_loop(_scan_file_for_threats(file_id))
+    _run_file_task(file_id, _scan_file_for_threats(file_id))
 
 
 @celery_app.task
 def extract_file_metadata(file_id: str) -> None:
-    run_in_worker_loop(_extract_file_metadata(file_id))
+    _run_file_task(file_id, _extract_file_metadata(file_id))
 
 
 @celery_app.task
 def send_file_alert(file_id: str) -> None:
-    run_in_worker_loop(_send_file_alert(file_id))
+    _run_file_task(file_id, _send_file_alert(file_id))

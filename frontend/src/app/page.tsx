@@ -1,94 +1,23 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import {
-  Alert,
-  Badge,
-  Button,
-  Card,
-  Col,
-  Container,
-  Form,
-  Modal,
-  Row,
-  Spinner,
-  Table,
-} from "react-bootstrap";
+import { Alert, Button, Card, Col, Container, Row } from "react-bootstrap";
 
-type FileItem = {
-  id: string;
-  title: string;
-  original_name: string;
-  mime_type: string;
-  size: number;
-  processing_status: string;
-  scan_status: string | null;
-  scan_details: string | null;
-  metadata_json: Record<string, unknown> | null;
-  requires_attention: boolean;
-  created_at: string;
-  updated_at: string;
-};
+import { fetchAlerts, fetchFiles, uploadFile } from "../api";
+import { AlertsTable } from "../components/AlertsTable";
+import { FileTable } from "../components/FileTable";
+import { UploadFileModal } from "../components/UploadFileModal";
+import type { AlertItem, FileItem } from "../types";
 
-type AlertItem = {
-  id: number;
-  file_id: string;
-  level: string;
-  message: string;
-  created_at: string;
-};
-
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("ru-RU", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(new Date(value));
-}
-
-function formatSize(size: number) {
-  if (size < 1024) {
-    return `${size} B`;
-  }
-
-  if (size < 1024 * 1024) {
-    return `${(size / 1024).toFixed(1)} KB`;
-  }
-
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function getLevelVariant(level: string) {
-  if (level === "critical") {
-    return "danger";
-  }
-
-  if (level === "warning") {
-    return "warning";
-  }
-
-  return "success";
-}
-
-function getProcessingVariant(status: string) {
-  if (status === "failed") {
-    return "danger";
-  }
-
-  if (status === "processing") {
-    return "warning";
-  }
-
-  if (status === "processed") {
-    return "success";
-  }
-
-  return "secondary";
-}
+const PAGE_LIMIT = 20;
 
 export default function Page() {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
+  const [filesTotal, setFilesTotal] = useState(0);
+  const [alertsTotal, setAlertsTotal] = useState(0);
+  const [filesOffset, setFilesOffset] = useState(0);
+  const [alertsOffset, setAlertsOffset] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showModal, setShowModal] = useState(false);
@@ -96,27 +25,22 @@ export default function Page() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  async function loadData() {
+  async function loadData(nextFilesOffset = filesOffset, nextAlertsOffset = alertsOffset) {
     setIsLoading(true);
     setErrorMessage(null);
 
     try {
-      const [filesResponse, alertsResponse] = await Promise.all([
-        fetch(`http://localhost:8000/files`, { cache: "no-store" }),
-        fetch(`http://localhost:8000/alerts`, { cache: "no-store" }),
-      ]);
-
-      if (!filesResponse.ok || !alertsResponse.ok) {
-        throw new Error("Не удалось загрузить данные");
-      }
-
       const [filesData, alertsData] = await Promise.all([
-        filesResponse.json() as Promise<FileItem[]>,
-        alertsResponse.json() as Promise<AlertItem[]>,
+        fetchFiles(PAGE_LIMIT, nextFilesOffset),
+        fetchAlerts(PAGE_LIMIT, nextAlertsOffset),
       ]);
 
-      setFiles(filesData);
-      setAlerts(alertsData);
+      setFiles(filesData.items);
+      setAlerts(alertsData.items);
+      setFilesTotal(filesData.total);
+      setAlertsTotal(alertsData.total);
+      setFilesOffset(filesData.offset);
+      setAlertsOffset(alertsData.offset);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Произошла ошибка");
     } finally {
@@ -144,19 +68,11 @@ export default function Page() {
     formData.append("file", selectedFile);
 
     try {
-      const response = await fetch(`http://localhost:8000/files`, {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error("Не удалось загрузить файл");
-      }
-
+      await uploadFile(formData);
       setShowModal(false);
       setTitle("");
       setSelectedFile(null);
-      await loadData();
+      await loadData(0, 0);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Произошла ошибка");
     } finally {
@@ -195,173 +111,37 @@ export default function Page() {
             </Alert>
           ) : null}
 
-          <Card className="shadow-sm border-0 mb-4">
-            <Card.Header className="bg-white border-0 pt-4 px-4">
-              <div className="d-flex justify-content-between align-items-center">
-                <h2 className="h5 mb-0">Файлы</h2>
-                <Badge bg="secondary">{files.length}</Badge>
-              </div>
-            </Card.Header>
-            <Card.Body className="px-4 pb-4">
-              {isLoading ? (
-                <div className="d-flex justify-content-center py-5">
-                  <Spinner animation="border" />
-                </div>
-              ) : (
-                <div className="table-responsive">
-                  <Table hover bordered className="align-middle mb-0">
-                    <thead className="table-light">
-                      <tr>
-                        <th>Название</th>
-                        <th>Файл</th>
-                        <th>MIME</th>
-                        <th>Размер</th>
-                        <th>Статус</th>
-                        <th>Проверка</th>
-                        <th>Создан</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {files.length === 0 ? (
-                        <tr>
-                          <td colSpan={8} className="text-center py-4 text-secondary">
-                            Файлы пока не загружены
-                          </td>
-                        </tr>
-                      ) : (
-                        files.map((file) => (
-                          <tr key={file.id}>
-                            <td>
-                              <div className="fw-semibold">{file.title}</div>
-                              <div className="small text-secondary">{file.id}</div>
-                            </td>
-                            <td>{file.original_name}</td>
-                            <td>{file.mime_type}</td>
-                            <td>{formatSize(file.size)}</td>
-                            <td>
-                              <Badge bg={getProcessingVariant(file.processing_status)}>
-                                {file.processing_status}
-                              </Badge>
-                            </td>
-                            <td>
-                              <div className="d-flex flex-column gap-1">
-                                <Badge bg={file.requires_attention ? "warning" : "success"}>
-                                  {file.scan_status ?? "pending"}
-                                </Badge>
-                                <span className="small text-secondary">
-                                  {file.scan_details ?? "Ожидает обработки"}
-                                </span>
-                              </div>
-                            </td>
-                            <td>{formatDate(file.created_at)}</td>
-                            <td className="text-nowrap">
-                              <Button
-                                as="a"
-                                href={`http://localhost:8000/files/${file.id}/download`}
-                                variant="outline-primary"
-                                size="sm"
-                              >
-                                Скачать
-                              </Button>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </Table>
-                </div>
-              )}
-            </Card.Body>
-          </Card>
+          <FileTable
+            files={files}
+            filesTotal={filesTotal}
+            filesOffset={filesOffset}
+            pageLimit={PAGE_LIMIT}
+            isLoading={isLoading}
+            onPrevious={() => void loadData(Math.max(filesOffset - PAGE_LIMIT, 0), alertsOffset)}
+            onNext={() => void loadData(filesOffset + PAGE_LIMIT, alertsOffset)}
+          />
 
-          <Card className="shadow-sm border-0">
-            <Card.Header className="bg-white border-0 pt-4 px-4">
-              <div className="d-flex justify-content-between align-items-center">
-                <h2 className="h5 mb-0">Алерты</h2>
-                <Badge bg="secondary">{alerts.length}</Badge>
-              </div>
-            </Card.Header>
-            <Card.Body className="px-4 pb-4">
-              {isLoading ? (
-                <div className="d-flex justify-content-center py-5">
-                  <Spinner animation="border" />
-                </div>
-              ) : (
-                <div className="table-responsive">
-                  <Table hover bordered className="align-middle mb-0">
-                    <thead className="table-light">
-                      <tr>
-                        <th>ID</th>
-                        <th>File ID</th>
-                        <th>Уровень</th>
-                        <th>Сообщение</th>
-                        <th>Создан</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {alerts.length === 0 ? (
-                        <tr>
-                          <td colSpan={5} className="text-center py-4 text-secondary">
-                            Алертов пока нет
-                          </td>
-                        </tr>
-                      ) : (
-                        alerts.map((item) => (
-                          <tr key={item.id}>
-                            <td>{item.id}</td>
-                            <td className="small">{item.file_id}</td>
-                            <td>
-                              <Badge bg={getLevelVariant(item.level)}>{item.level}</Badge>
-                            </td>
-                            <td>{item.message}</td>
-                            <td>{formatDate(item.created_at)}</td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </Table>
-                </div>
-              )}
-            </Card.Body>
-          </Card>
+          <AlertsTable
+            alerts={alerts}
+            alertsTotal={alertsTotal}
+            alertsOffset={alertsOffset}
+            pageLimit={PAGE_LIMIT}
+            isLoading={isLoading}
+            onPrevious={() => void loadData(filesOffset, Math.max(alertsOffset - PAGE_LIMIT, 0))}
+            onNext={() => void loadData(filesOffset, alertsOffset + PAGE_LIMIT)}
+          />
         </Col>
       </Row>
 
-      <Modal show={showModal} onHide={() => setShowModal(false)} centered>
-        <Form onSubmit={handleSubmit}>
-          <Modal.Header closeButton>
-            <Modal.Title>Добавить файл</Modal.Title>
-          </Modal.Header>
-          <Modal.Body>
-            <Form.Group className="mb-3">
-              <Form.Label>Название</Form.Label>
-              <Form.Control
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
-                placeholder="Например, Договор с подрядчиком"
-              />
-            </Form.Group>
-            <Form.Group>
-              <Form.Label>Файл</Form.Label>
-              <Form.Control
-                type="file"
-                onChange={(event) =>
-                  setSelectedFile((event.target as HTMLInputElement).files?.[0] ?? null)
-                }
-              />
-            </Form.Group>
-          </Modal.Body>
-          <Modal.Footer>
-            <Button variant="outline-secondary" onClick={() => setShowModal(false)}>
-              Отмена
-            </Button>
-            <Button type="submit" variant="primary" disabled={isSubmitting}>
-              {isSubmitting ? "Загрузка..." : "Сохранить"}
-            </Button>
-          </Modal.Footer>
-        </Form>
-      </Modal>
+      <UploadFileModal
+        show={showModal}
+        title={title}
+        isSubmitting={isSubmitting}
+        onHide={() => setShowModal(false)}
+        onSubmit={handleSubmit}
+        onTitleChange={setTitle}
+        onFileChange={setSelectedFile}
+      />
     </Container>
   );
 }
