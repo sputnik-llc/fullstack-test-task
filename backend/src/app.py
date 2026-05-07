@@ -1,11 +1,18 @@
-from fastapi import FastAPI, HTTPException
-from fastapi import File, Form, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from starlette import status
 from src.schemas import AlertItem, FileItem, FileUpdate
-from src.service import create_file, delete_file, get_file, list_alerts, list_files, update_file, STORAGE_DIR
+from src.service import (
+    STORAGE_DIR,
+    create_file,
+    delete_file,
+    get_file,
+    list_alerts,
+    list_files,
+    update_file,
+)
 from src.tasks import scan_file_for_threats
+from starlette import status
 
 app = FastAPI()
 app.add_middleware(
@@ -58,7 +65,9 @@ async def download_file(file_id: str):
     file_item = await get_file(file_id)
     stored_path = STORAGE_DIR / file_item.stored_name
     if not stored_path.exists():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Stored file not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Stored file not found"
+        )
     return FileResponse(
         path=stored_path,
         media_type=file_item.mime_type,

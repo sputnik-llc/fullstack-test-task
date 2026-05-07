@@ -1,10 +1,11 @@
 import asyncio
 import os
 from pathlib import Path
+
 from celery import Celery
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from src.models import Alert, StoredFile
-from src.service import STORAGE_DIR, DB_URL
+from src.service import DB_URL, STORAGE_DIR
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://backend-redis:6379/0")
 _worker_loop: asyncio.AbstractEventLoop | None = None
@@ -39,7 +40,10 @@ async def _scan_file_for_threats(file_id: str) -> None:
         if file_item.size > 10 * 1024 * 1024:
             reasons.append("file is larger than 10 MB")
 
-        if extension == ".pdf" and file_item.mime_type not in {"application/pdf", "application/octet-stream"}:
+        if extension == ".pdf" and file_item.mime_type not in {
+            "application/pdf",
+            "application/octet-stream",
+        }:
             reasons.append("pdf extension does not match mime type")
 
         file_item.scan_status = "suspicious" if reasons else "clean"
@@ -93,7 +97,9 @@ async def _send_file_alert(file_id: str) -> None:
             return
 
         if file_item.processing_status == "failed":
-            alert = Alert(file_id=file_id, level="critical", message="File processing failed")
+            alert = Alert(
+                file_id=file_id, level="critical", message="File processing failed"
+            )
         elif file_item.requires_attention:
             alert = Alert(
                 file_id=file_id,
@@ -101,7 +107,9 @@ async def _send_file_alert(file_id: str) -> None:
                 message=f"File requires attention: {file_item.scan_details}",
             )
         else:
-            alert = Alert(file_id=file_id, level="info", message="File processed successfully")
+            alert = Alert(
+                file_id=file_id, level="info", message="File processed successfully"
+            )
 
         session.add(alert)
         await session.commit()
