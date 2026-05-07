@@ -25,7 +25,7 @@ services:
     image: postgres:latest
     container_name: backend-db
     ports:
-      - "5433:5433"
+      - "5433:5432"
     env_file: ".env.dev"
     volumes:
       - backend-db-volume:/var/lib/postgresql

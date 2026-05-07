@@ -13,4 +13,5 @@ dependencies = [
     "python-multipart>=0.0.20",
     "sqlalchemy>=2.0.48",
     "uvicorn>=0.42.0",
+    "pytest>=8.4.2",
 ]

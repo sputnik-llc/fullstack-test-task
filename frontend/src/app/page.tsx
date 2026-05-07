@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useState } from "react";
 import {
   Alert,
   Badge,
@@ -14,29 +14,8 @@ import {
   Spinner,
   Table,
 } from "react-bootstrap";
-
-type FileItem = {
-  id: string;
-  title: string;
-  original_name: string;
-  mime_type: string;
-  size: number;
-  processing_status: string;
-  scan_status: string | null;
-  scan_details: string | null;
-  metadata_json: Record<string, unknown> | null;
-  requires_attention: boolean;
-  created_at: string;
-  updated_at: string;
-};
-
-type AlertItem = {
-  id: number;
-  file_id: string;
-  level: string;
-  message: string;
-  created_at: string;
-};
+import { useDashboardData } from "../hooks/useDashboardData";
+import { apiRequest, getApiUrl } from "../lib/api";
 
 
 function formatDate(value: string) {
@@ -87,78 +66,40 @@ function getProcessingVariant(status: string) {
 }
 
 export default function Page() {
-  const [files, setFiles] = useState<FileItem[]>([]);
-  const [alerts, setAlerts] = useState<AlertItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { files, alerts, isLoading, errorMessage, loadData } = useDashboardData();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [title, setTitle] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  async function loadData() {
-    setIsLoading(true);
-    setErrorMessage(null);
-
-    try {
-      const [filesResponse, alertsResponse] = await Promise.all([
-        fetch(`http://localhost:8000/files`, { cache: "no-store" }),
-        fetch(`http://localhost:8000/alerts`, { cache: "no-store" }),
-      ]);
-
-      if (!filesResponse.ok || !alertsResponse.ok) {
-        throw new Error("Не удалось загрузить данные");
-      }
-
-      const [filesData, alertsData] = await Promise.all([
-        filesResponse.json() as Promise<FileItem[]>,
-        alertsResponse.json() as Promise<AlertItem[]>,
-      ]);
-
-      setFiles(filesData);
-      setAlerts(alertsData);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Произошла ошибка");
-    } finally {
-      setIsLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    void loadData();
-  }, []);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (!title.trim() || !selectedFile) {
-      setErrorMessage("Укажите название и выберите файл");
+      setSubmitError("Укажите название и выберите файл");
       return;
     }
 
     setIsSubmitting(true);
-    setErrorMessage(null);
+    setSubmitError(null);
 
     const formData = new FormData();
     formData.append("title", title.trim());
     formData.append("file", selectedFile);
 
     try {
-      const response = await fetch(`http://localhost:8000/files`, {
+      await apiRequest("/files", {
         method: "POST",
         body: formData,
       });
-
-      if (!response.ok) {
-        throw new Error("Не удалось загрузить файл");
-      }
 
       setShowModal(false);
       setTitle("");
       setSelectedFile(null);
       await loadData();
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Произошла ошибка");
+      setSubmitError(error instanceof Error ? error.message : "Произошла ошибка");
     } finally {
       setIsSubmitting(false);
     }
@@ -189,9 +130,9 @@ export default function Page() {
             </Card.Body>
           </Card>
 
-          {errorMessage ? (
+          {errorMessage || submitError ? (
             <Alert variant="danger" className="shadow-sm">
-              {errorMessage}
+              {errorMessage ?? submitError}
             </Alert>
           ) : null}
 
@@ -258,7 +199,7 @@ export default function Page() {
                             <td className="text-nowrap">
                               <Button
                                 as="a"
-                                href={`http://localhost:8000/files/${file.id}/download`}
+                                href={`${getApiUrl()}/files/${file.id}/download`}
                                 variant="outline-primary"
                                 size="sm"
                               >
