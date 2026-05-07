@@ -5,9 +5,21 @@ build/
 dist/
 wheels/
 *.egg-info
+.pytest_cache/
+.mypy_cache/
+.coverage
 
 # Virtual environments
 .venv
+**/.venv/
 .idea
 **/.DS_Store
 backend/storage/*
+
+# Frontend build/deps
+frontend/node_modules/
+frontend/.next/
+
+# Local env overrides (keep examples)
+backend/.env.dev
+frontend/.env.local

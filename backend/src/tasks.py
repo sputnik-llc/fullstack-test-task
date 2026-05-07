@@ -7,6 +7,7 @@ from src.models import Alert, StoredFile
 from src.service import STORAGE_DIR, DB_URL
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://backend-redis:6379/0")
+MAX_METADATA_READ_BYTES = int(os.environ.get("MAX_METADATA_READ_BYTES", str(2 * 1024 * 1024)))
 _worker_loop: asyncio.AbstractEventLoop | None = None
 
 
@@ -72,11 +73,11 @@ async def _extract_file_metadata(file_id: str) -> None:
         }
 
         if file_item.mime_type.startswith("text/"):
-            content = stored_path.read_text(encoding="utf-8", errors="ignore")
+            content = stored_path.read_text(encoding="utf-8", errors="ignore")[:MAX_METADATA_READ_BYTES]
             metadata["line_count"] = len(content.splitlines())
             metadata["char_count"] = len(content)
         elif file_item.mime_type == "application/pdf":
-            content = stored_path.read_bytes()
+            content = stored_path.read_bytes()[:MAX_METADATA_READ_BYTES]
             metadata["approx_page_count"] = max(content.count(b"/Type /Page"), 1)
 
         file_item.metadata_json = metadata
