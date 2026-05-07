@@ -100,22 +100,3 @@ async def delete_file(file_id: str) -> None:
             stored_path.unlink()
         await session.delete(file_item)
         await session.commit()
-
-
-async def get_file_path(file_id: str) -> tuple[StoredFile, Path]:
-    file_item = await get_file(file_id)
-    stored_path = STORAGE_DIR / file_item.stored_name
-    if not stored_path.exists():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Stored file not found"
-        )
-    return file_item, stored_path
-
-
-async def create_alert(file_id: str, level: str, message: str) -> Alert:
-    alert = Alert(file_id=file_id, level=level, message=message)
-    async with async_session_maker() as session:
-        session.add(alert)
-        await session.commit()
-        await session.refresh(alert)
-        return alert
