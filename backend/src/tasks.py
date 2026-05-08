@@ -1,13 +1,10 @@
 import asyncio
-import os
 from pathlib import Path
 
 from celery import Celery
-from src.database import async_session_maker
+from src.config import REDIS_URL, STORAGE_DIR, async_session_maker
 from src.models import Alert, StoredFile
-from src.service import STORAGE_DIR
 
-REDIS_URL = os.environ.get("REDIS_URL", "redis://backend-redis:6379/0")
 _worker_loop: asyncio.AbstractEventLoop | None = None
 
 

@@ -1,6 +1,13 @@
 import os
+from pathlib import Path
 
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+STORAGE_DIR = BASE_DIR / "storage" / "files"
+STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+
+REDIS_URL = os.environ.get("REDIS_URL", "redis://backend-redis:6379/0")
 
 DB_URL = (
     f"postgresql+asyncpg://{os.environ.get('POSTGRES_USER')}:"
