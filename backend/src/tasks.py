@@ -18,6 +18,9 @@ def run_in_worker_loop(coroutine):
 
 celery_app = Celery("file_tasks", broker=REDIS_URL, backend=REDIS_URL)
 
+MAX_FILE_SIZE = 10 * 1024 * 1024
+SUSPICIOUS_EXTENSIONS = {".exe", ".bat", ".cmd", ".sh", ".js"}
+
 
 async def _scan_file_for_threats(file_id: str) -> None:
     async with async_session_maker() as session:
@@ -29,11 +32,11 @@ async def _scan_file_for_threats(file_id: str) -> None:
         reasons: list[str] = []
         extension = Path(file_item.original_name).suffix.lower()
 
-        if extension in {".exe", ".bat", ".cmd", ".sh", ".js"}:
+        if extension in SUSPICIOUS_EXTENSIONS:
             reasons.append(f"suspicious extension {extension}")
 
-        if file_item.size > 10 * 1024 * 1024:
-            reasons.append("file is larger than 10 MB")
+        if file_item.size > MAX_FILE_SIZE:
+            reasons.append(f"file is larger than {MAX_FILE_SIZE // (1024 * 1024)} MB")
 
         if extension == ".pdf" and file_item.mime_type not in {
             "application/pdf",
