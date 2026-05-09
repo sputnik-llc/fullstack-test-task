@@ -76,6 +76,16 @@ async def update_file(file_id: str, title: str) -> StoredFile:
         return file_item
 
 
+async def get_file_for_download(file_id: str) -> tuple[StoredFile, Path]:
+    file_item = await get_file(file_id)
+    stored_path = STORAGE_DIR / file_item.stored_name
+    if not stored_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Stored file not found"
+        )
+    return file_item, stored_path
+
+
 async def delete_file(file_id: str) -> None:
     async with async_session_maker() as session:
         file_item = await session.get(StoredFile, file_id)
