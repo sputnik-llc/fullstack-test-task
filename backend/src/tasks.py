@@ -26,6 +26,7 @@ async def _scan_file_for_threats(file_id: str) -> None:
     async with async_session_maker() as session:
         file_item = await session.get(StoredFile, file_id)
         if not file_item:
+            # TODO: should log a warning or raise so Celery marks the task as FAILED
             return
 
         file_item.processing_status = "processing"
@@ -58,6 +59,7 @@ async def _extract_file_metadata(file_id: str) -> None:
     async with async_session_maker() as session:
         file_item = await session.get(StoredFile, file_id)
         if not file_item:
+            # TODO: should log a warning or raise so Celery marks the task as FAILED
             return
 
         stored_path = STORAGE_DIR / file_item.stored_name
@@ -94,6 +96,7 @@ async def _send_file_alert(file_id: str) -> None:
     async with async_session_maker() as session:
         file_item = await session.get(StoredFile, file_id)
         if not file_item:
+            # TODO: should log a warning or raise so Celery marks the task as FAILED
             return
 
         if file_item.processing_status == "failed":
