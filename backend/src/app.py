@@ -1,3 +1,4 @@
+from celery import chain
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -11,7 +12,7 @@ from src.service import (
     list_files,
     update_file,
 )
-from src.tasks import scan_file_for_threats
+from src.tasks import extract_file_metadata, scan_file_for_threats, send_file_alert
 
 app = FastAPI()
 app.add_middleware(
@@ -42,7 +43,11 @@ async def create_file_view(
     file: UploadFile = File(...),
 ):
     file_item = await create_file(title=title, upload_file=file)
-    scan_file_for_threats.delay(file_item.id)
+    chain(
+        scan_file_for_threats.si(file_item.id),
+        extract_file_metadata.si(file_item.id),
+        send_file_alert.si(file_item.id),
+    ).delay()
     return file_item
 
 
