@@ -97,19 +97,16 @@ async def _send_file_alert(file_id: str) -> None:
             return
 
         if file_item.processing_status == "failed":
-            alert = Alert(
-                file_id=file_id, level="critical", message="File processing failed"
-            )
+            level, message = "critical", "File processing failed"
         elif file_item.requires_attention:
-            alert = Alert(
-                file_id=file_id,
-                level="warning",
-                message=f"File requires attention: {file_item.scan_details}",
+            level, message = (
+                "warning",
+                f"File requires attention: {file_item.scan_details}",
             )
         else:
-            alert = Alert(
-                file_id=file_id, level="info", message="File processed successfully"
-            )
+            level, message = "info", "File processed successfully"
+
+        alert = Alert(file_id=file_id, level=level, message=message)
 
         session.add(alert)
         await session.commit()
