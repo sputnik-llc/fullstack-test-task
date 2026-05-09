@@ -1,11 +1,18 @@
-from fastapi import FastAPI, HTTPException
-from fastapi import File, Form, UploadFile
+from celery import chain
+from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from starlette import status
 from src.schemas import AlertItem, FileItem, FileUpdate
-from src.service import create_file, delete_file, get_file, list_alerts, list_files, update_file, STORAGE_DIR
-from src.tasks import scan_file_for_threats
+from src.service import (
+    create_file,
+    delete_file,
+    get_file,
+    get_file_for_download,
+    list_alerts,
+    list_files,
+    update_file,
+)
+from src.tasks import extract_file_metadata, scan_file_for_threats, send_file_alert
 
 app = FastAPI()
 app.add_middleware(
@@ -36,7 +43,11 @@ async def create_file_view(
     file: UploadFile = File(...),
 ):
     file_item = await create_file(title=title, upload_file=file)
-    scan_file_for_threats.delay(file_item.id)
+    chain(
+        scan_file_for_threats.si(file_item.id),
+        extract_file_metadata.si(file_item.id),
+        send_file_alert.si(file_item.id),
+    ).delay()
     return file_item
 
 
@@ -54,11 +65,8 @@ async def update_file_view(
 
 
 @app.get("/files/{file_id}/download")
-async def download_file(file_id: str):
-    file_item = await get_file(file_id)
-    stored_path = STORAGE_DIR / file_item.stored_name
-    if not stored_path.exists():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Stored file not found")
+async def download_file_view(file_id: str):
+    file_item, stored_path = await get_file_for_download(file_id)
     return FileResponse(
         path=stored_path,
         media_type=file_item.mime_type,

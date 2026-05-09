@@ -1,12 +1,10 @@
 import asyncio
-import os
 from pathlib import Path
-from celery import Celery
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-from src.models import Alert, StoredFile
-from src.service import STORAGE_DIR, DB_URL
 
-REDIS_URL = os.environ.get("REDIS_URL", "redis://backend-redis:6379/0")
+from celery import Celery
+from src.config import REDIS_URL, STORAGE_DIR, async_session_maker
+from src.models import Alert, StoredFile
+
 _worker_loop: asyncio.AbstractEventLoop | None = None
 
 
@@ -19,27 +17,34 @@ def run_in_worker_loop(coroutine):
 
 
 celery_app = Celery("file_tasks", broker=REDIS_URL, backend=REDIS_URL)
-engine = create_async_engine(DB_URL)
-async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
+
+MAX_FILE_SIZE = 10 * 1024 * 1024
+SUSPICIOUS_EXTENSIONS = {".exe", ".bat", ".cmd", ".sh", ".js"}
 
 
 async def _scan_file_for_threats(file_id: str) -> None:
     async with async_session_maker() as session:
         file_item = await session.get(StoredFile, file_id)
         if not file_item:
+            # TODO: should log a warning or raise so Celery marks the task as FAILED
             return
 
         file_item.processing_status = "processing"
+        await session.commit()
+
         reasons: list[str] = []
         extension = Path(file_item.original_name).suffix.lower()
 
-        if extension in {".exe", ".bat", ".cmd", ".sh", ".js"}:
+        if extension in SUSPICIOUS_EXTENSIONS:
             reasons.append(f"suspicious extension {extension}")
 
-        if file_item.size > 10 * 1024 * 1024:
-            reasons.append("file is larger than 10 MB")
+        if file_item.size > MAX_FILE_SIZE:
+            reasons.append(f"file is larger than {MAX_FILE_SIZE // (1024 * 1024)} MB")
 
-        if extension == ".pdf" and file_item.mime_type not in {"application/pdf", "application/octet-stream"}:
+        if extension == ".pdf" and file_item.mime_type not in {
+            "application/pdf",
+            "application/octet-stream",
+        }:
             reasons.append("pdf extension does not match mime type")
 
         file_item.scan_status = "suspicious" if reasons else "clean"
@@ -47,13 +52,12 @@ async def _scan_file_for_threats(file_id: str) -> None:
         file_item.requires_attention = bool(reasons)
         await session.commit()
 
-    extract_file_metadata.delay(file_id)
-
 
 async def _extract_file_metadata(file_id: str) -> None:
     async with async_session_maker() as session:
         file_item = await session.get(StoredFile, file_id)
         if not file_item:
+            # TODO: should log a warning or raise so Celery marks the task as FAILED
             return
 
         stored_path = STORAGE_DIR / file_item.stored_name
@@ -62,7 +66,6 @@ async def _extract_file_metadata(file_id: str) -> None:
             file_item.scan_status = file_item.scan_status or "failed"
             file_item.scan_details = "stored file not found during metadata extraction"
             await session.commit()
-            send_file_alert.delay(file_id)
             return
 
         metadata = {
@@ -83,25 +86,25 @@ async def _extract_file_metadata(file_id: str) -> None:
         file_item.processing_status = "processed"
         await session.commit()
 
-    send_file_alert.delay(file_id)
-
 
 async def _send_file_alert(file_id: str) -> None:
     async with async_session_maker() as session:
         file_item = await session.get(StoredFile, file_id)
         if not file_item:
+            # TODO: should log a warning or raise so Celery marks the task as FAILED
             return
 
         if file_item.processing_status == "failed":
-            alert = Alert(file_id=file_id, level="critical", message="File processing failed")
+            level, message = "critical", "File processing failed"
         elif file_item.requires_attention:
-            alert = Alert(
-                file_id=file_id,
-                level="warning",
-                message=f"File requires attention: {file_item.scan_details}",
+            level, message = (
+                "warning",
+                f"File requires attention: {file_item.scan_details}",
             )
         else:
-            alert = Alert(file_id=file_id, level="info", message="File processed successfully")
+            level, message = "info", "File processed successfully"
+
+        alert = Alert(file_id=file_id, level=level, message=message)
 
         session.add(alert)
         await session.commit()
