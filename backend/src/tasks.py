@@ -29,6 +29,8 @@ async def _scan_file_for_threats(file_id: str) -> None:
             return
 
         file_item.processing_status = "processing"
+        await session.commit()
+
         reasons: list[str] = []
         extension = Path(file_item.original_name).suffix.lower()
 
